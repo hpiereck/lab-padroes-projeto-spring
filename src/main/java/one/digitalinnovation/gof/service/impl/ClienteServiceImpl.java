@@ -2,7 +2,9 @@ package one.digitalinnovation.gof.service.impl;
 
 import java.util.Optional;
 
+import one.digitalinnovation.gof.exception.RegraDeNegocioException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import one.digitalinnovation.gof.model.Cliente;
@@ -41,9 +43,12 @@ public class ClienteServiceImpl implements ClienteService {
 
 	@Override
 	public Cliente buscarPorId(Long id) {
-		// Buscar Cliente por ID.
 		Optional<Cliente> cliente = clienteRepository.findById(id);
-		return cliente.get();
+		if (cliente.isPresent()) {
+			return cliente.get();
+		} else {
+			throw new RegraDeNegocioException("Cliente não encontrado com id: " + id);
+		}
 	}
 
 	@Override
@@ -67,16 +72,29 @@ public class ClienteServiceImpl implements ClienteService {
 	}
 
 	private void salvarClienteComCep(Cliente cliente) {
-		// Verificar se o Endereco do Cliente já existe (pelo CEP).
-		String cep = cliente.getEndereco().getCep();
-		Endereco endereco = enderecoRepository.findById(cep).orElseGet(() -> {
-			// Caso não exista, integrar com o ViaCEP e persistir o retorno.
+		if (cliente.getEndereco() == null || cliente.getEndereco().getCep() == null) {
+			throw new RegraDeNegocioException("CEP é obrigatório.");
+		}
+
+		String cep = cliente.getEndereco().getCep().replaceAll("\\D", "");
+
+		if (cep.length() != 8) {
+			throw new RegraDeNegocioException("CEP inválido. O CEP deve conter 8 dígitos numéricos.");
+		}
+
+		Optional<Endereco> enderecoExistente = enderecoRepository.findByCep(cep);
+
+		Endereco endereco;
+
+		if (enderecoExistente.isPresent()) {
+			endereco = enderecoExistente.get();
+		} else {
 			Endereco novoEndereco = viaCepService.consultarCep(cep);
-			enderecoRepository.save(novoEndereco);
-			return novoEndereco;
-		});
+			novoEndereco.setCep(cep);
+			endereco = enderecoRepository.save(novoEndereco);
+		}
+
 		cliente.setEndereco(endereco);
-		// Inserir Cliente, vinculando o Endereco (novo ou existente).
 		clienteRepository.save(cliente);
 	}
 
